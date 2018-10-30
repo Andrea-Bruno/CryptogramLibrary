@@ -8,7 +8,7 @@ namespace CryptogramLibrary.Resources
   {
     static Dictionary()
     {
-      string Lng = System.Globalization.CultureInfo.CurrentCulture.ToString().Substring(0, 2);
+      var Lng = System.Globalization.CultureInfo.CurrentCulture.ToString().Substring(0, 2);
       switch (Lng)
       {
         case "it":

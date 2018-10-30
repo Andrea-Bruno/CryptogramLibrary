@@ -4,30 +4,28 @@ using System.Text;
 
 namespace CryptogramLibrary
 {
-  static class Cryptography
+  internal static class Cryptography
   {
-    public static byte[] Encrypt(byte[] Data, byte[] Password)
+    public static byte[] Encrypt(byte[] data, byte[] password)
     {
       System.Security.Cryptography.HashAlgorithm hashType = new System.Security.Cryptography.SHA256Managed();
-      byte[] Hash = hashType.ComputeHash(Password);
-      var Result = new byte[Data.Length];
-      int p = 0;
-      for (int i = 0; i < Data.Length; i++)
+      var hash = hashType.ComputeHash(password);
+      var result = new byte[data.Length];
+      var p = 0;
+      for (var i = 0; i < data.Length; i++)
       {
-        Result[i] = (byte)(Data[i] ^ Hash[p]);
+        result[i] = (byte)(data[i] ^ hash[p]);
         p += 1;
-        if (p == Hash.Length)
-        {
-          p = 0;
-          Hash = hashType.ComputeHash(Hash);
-        }
+        if (p != hash.Length) continue;
+        p = 0;
+        hash = hashType.ComputeHash(hash);
       }
-      return Result;
+      return result;
     }
 
-    public static byte[] Decrypt(byte[] EncryptedData, byte[] Password)
+    public static byte[] Decrypt(byte[] encryptedData, byte[] password)
     {
-      return Encrypt(EncryptedData, Password);
+      return Encrypt(encryptedData, password);
     }
   }
 }

@@ -13,123 +13,120 @@ namespace CryptogramLibrary
       Image,
       Audio,
     }
-    const int MaxPartecipants = 10;
-    private static string BlockChainName;
-    private static Blockchain Blockchain;
+
+    private const int MaxPartecipants = 10;
+    private static string _blockChainName;
+    private static Blockchain _blockchain;
 
 
     /// <summary>
     /// This function starts the messaging chat room
     /// </summary>
-    /// <param name="PublicKeys">A string containing all the participants' public keys</param>
-    public static void CreateChatRoom(string PublicKeys)
+    /// <param name="publicKeys">A string containing all the participants' public keys</param>
+    public static void CreateChatRoom(string publicKeys)
     {
       new System.Threading.Thread(() =>
       {
-        string MyPublicKey = GetMyPublicKey();
-        if (!PublicKeys.Contains(MyPublicKey))
-          PublicKeys += MyPublicKey;
-        PublicKeys = PublicKeys.Replace("==", "== ");
-        var Keys = PublicKeys.Split(" ".ToCharArray(), StringSplitOptions.RemoveEmptyEntries);
-        CreateChatRoom(new List<string>(Keys));
+        var myPublicKey = GetMyPublicKey();
+        if (!publicKeys.Contains(myPublicKey))
+          publicKeys += myPublicKey;
+        publicKeys = publicKeys.Replace("==", "== ");
+        var keys = publicKeys.Split(" ".ToCharArray(), StringSplitOptions.RemoveEmptyEntries);
+        CreateChatRoom(new List<string>(keys));
       }).Start();
     }
 
-    private static List<string> _Participants; //List in base64 format
-    private static int RunningCreateChatRool = 0;
-    public static void CreateChatRoom(List<string> Partecipants)
+    private static List<string> _participants; //List in base64 format
+    private static int _runningCreateChatRool = 0;
+    public static void CreateChatRoom(List<string> partecipants)
     {
-      RunningCreateChatRool += 1;
-      if (RunningCreateChatRool == 1)
+      _runningCreateChatRool += 1;
+      if (_runningCreateChatRool == 1)
       {
         new System.Threading.Thread(() =>
         {
-          if (Partecipants.Count > MaxPartecipants)
+          if (partecipants.Count > MaxPartecipants)
           {
             Functions.Alert(Resources.Dictionary.TooManyParticipants);
-            RunningCreateChatRool = 0;
+            _runningCreateChatRool = 0;
             return;
           }
-          foreach (var MemberKey in Partecipants)
+          foreach (var memberKey in partecipants)
           {
-            if (!ValidateKey(MemberKey))
-            {
-              Functions.Alert(Resources.Dictionary.InvalidKey);
-              RunningCreateChatRool = 0;
-              return;
-            }
+            if (ValidateKey(memberKey)) continue;
+            Functions.Alert(Resources.Dictionary.InvalidKey);
+            _runningCreateChatRool = 0;
+            return;
           }
           //Messaging.Container = Container;
-          Partecipants.Sort();
-          _Participants = Partecipants;
-          string PtsStr = string.Join(" ", _Participants.ToArray());
+          partecipants.Sort();
+          _participants = partecipants;
+          var ptsStr = string.Join(" ", _participants.ToArray());
           System.Security.Cryptography.HashAlgorithm hashType = new System.Security.Cryptography.SHA256Managed();
-          byte[] hashBytes = hashType.ComputeHash(Encoding.GetEncoding("utf-16LE").GetBytes(PtsStr));
-          BlockChainName = Convert.ToBase64String(hashBytes);
-          Blockchain = new Blockchain("cryptogram", BlockChainName, Blockchain.BlockchainType.Binary, Blockchain.BlockSynchronization.SendToTheNetworkBuffer, false, 8192);
-          var BlockchainLen = ReadBlockchain();
+          var hashBytes = hashType.ComputeHash(Encoding.GetEncoding("utf-16LE").GetBytes(ptsStr));
+          _blockChainName = Convert.ToBase64String(hashBytes);
+          _blockchain = new Blockchain("cryptogram", _blockChainName, Blockchain.BlockchainType.Binary, Blockchain.BlockSynchronization.SendToTheNetworkBuffer, false, 8192);
+          var blockchainLen = ReadBlockchain();
           new System.Threading.Thread(() =>
           {
-            Blockchain.RequestAnyNewBlocks();
-            ReadBlockchain(BlockchainLen);
-            RunningCreateChatRool = 0;
+            _blockchain.RequestAnyNewBlocks();
+            ReadBlockchain(blockchainLen);
+            _runningCreateChatRool = 0;
           }).Start();
         }).Start();
       }
       return;
     }
 
-    private static long ReadBlockchain(long FromPosizion = 0)
+    private static long ReadBlockchain(long fromPosizion = 0)
     {
-      Blockchain.ReadBlocks(FromPosizion, ExecuteBlock);
-      return Blockchain.Length();
+      _blockchain.ReadBlocks(fromPosizion, ExecuteBlock);
+      return _blockchain.Length();
     }
-    private static void ExecuteBlock(Blockchain.Block Block)
+    private static void ExecuteBlock(Blockchain.Block block)
     {
-      if (Block != null && Block.IsValid())
+      if (block == null || !block.IsValid()) return;
+      var dateAndTime = block.Timestamp;
+      var blockData = block.DataByteArray;
+      var version = blockData[0];
+      var type = (DataType)blockData[1];
+      var password = DecryptPassword(blockData, out var encryptedDataPosition);
+      var len = blockData.Length - encryptedDataPosition;
+      var encryptedData = new byte[len];
+      Buffer.BlockCopy(blockData, encryptedDataPosition, encryptedData, 0, len);
+      var dataElement = Cryptography.Decrypt(encryptedData, password);
+      var dataLen = dataElement.Length - 128;
+      var data = new byte[dataLen];
+      Buffer.BlockCopy(dataElement, 0, data, 0, dataLen);
+      System.Security.Cryptography.HashAlgorithm hashType = new System.Security.Cryptography.SHA256Managed();
+      var hashData = hashType.ComputeHash(data);
+      var signatureOfData = new byte[128];
+      Buffer.BlockCopy(dataElement, dataLen, signatureOfData, 0, 128);
+      // Find the author
+      string author = null;
+      foreach (var partecipant in _participants)
       {
-        var DateAndTime = Block.Timestamp;
-        var BlockData = Block.DataByteArray;
-        byte Version = BlockData[0];
-        DataType Type = (DataType)BlockData[1];
-        var Password = DecryptPassword(BlockData, out int EncryptedDataPosition);
-        var Len = BlockData.Length - EncryptedDataPosition;
-        var EncryptedData = new byte[Len];
-        Buffer.BlockCopy(BlockData, EncryptedDataPosition, EncryptedData, 0, Len);
-        var DataElement = Cryptography.Decrypt(EncryptedData, Password);
-        int DataLen = DataElement.Length - 128;
-        byte[] Data = new byte[DataLen];
-        Buffer.BlockCopy(DataElement, 0, Data, 0, DataLen);
-        System.Security.Cryptography.HashAlgorithm hashType = new System.Security.Cryptography.SHA256Managed();
-        byte[] HashData = hashType.ComputeHash(Data);
-        byte[] SignatureOfData = new byte[128];
-        Buffer.BlockCopy(DataElement, DataLen, SignatureOfData, 0, 128);
-        // Find the author
-        string Author = null;
-        foreach (var Partecipant in _Participants)
+        var rsAalg = new System.Security.Cryptography.RSACryptoServiceProvider();
+        rsAalg.ImportCspBlob(Convert.FromBase64String(partecipant));
+        if (rsAalg.VerifyHash(hashData, System.Security.Cryptography.CryptoConfig.MapNameToOID("SHA256"), signatureOfData))
         {
-          System.Security.Cryptography.RSACryptoServiceProvider RSAalg = new System.Security.Cryptography.RSACryptoServiceProvider();
-          RSAalg.ImportCspBlob(Convert.FromBase64String(Partecipant));
-          if (RSAalg.VerifyHash(HashData, System.Security.Cryptography.CryptoConfig.MapNameToOID("SHA256"), SignatureOfData))
-          {
-            Author = Partecipant;
-            break;
-          }
-        }
-        //var SignatureOfData = GetMyRSA().SignHash(HashData, System.Security.Cryptography.CryptoConfig.MapNameToOID("SHA256"));
-        //var Signatures = Block.GetAllBodySignature();
-        //var Author = _Participants.Find(x => Signatures.ContainsKey(x));
-        if (Author == null)
-          System.Diagnostics.Debug.WriteLine("Block written by an impostor");
-        else
-        {
-          var IsMy = Author == GetMyPublicKey();
-          ViewMessage(DateAndTime, Type, Data, IsMy);
+          author = partecipant;
+          break;
         }
       }
+      //var SignatureOfData = GetMyRSA().SignHash(HashData, System.Security.Cryptography.CryptoConfig.MapNameToOID("SHA256"));
+      //var Signatures = Block.GetAllBodySignature();
+      //var Author = _Participants.Find(x => Signatures.ContainsKey(x));
+      if (author == null)
+        System.Diagnostics.Debug.WriteLine("Block written by an impostor");
+      else
+      {
+        var isMy = author == GetMyPublicKey();
+        ViewMessage(dateAndTime, type, data, isMy);
+      }
     }
-    public delegate void ViewMessageUI(DateTime Timestamp, DataType Type, Byte[] Data, bool IsMyMessage);
-    public static ViewMessageUI ViewMessage = (TimeSpan, Type, Data, IsMyMessage) => { };
+    public delegate void ViewMessageUi(DateTime timestamp, DataType type, Byte[] data, bool isMyMessage);
+    public static ViewMessageUi ViewMessage = (timeSpan, type, data, isMyMessage) => { };
 
     private static byte[] GeneratePassword()
     {
@@ -137,17 +134,17 @@ namespace CryptogramLibrary
     }
 
     //private static byte[] pw;
-    private static byte[] EncryptPasswordForParticipants(byte[] Password)
+    private static byte[] EncryptPasswordForParticipants(byte[] password)
     {
       //========================RESULT================================
       //[len ePass1] + [ePass1] + [len ePass2] + [ePass2] + ... + [0] 
       //==============================================================
-      byte[] Result = new byte[0];
-      foreach (var PublicKey in _Participants)
+      var result = new byte[0];
+      foreach (var publicKey in _participants)
       {
-        System.Security.Cryptography.RSACryptoServiceProvider RSA = new System.Security.Cryptography.RSACryptoServiceProvider();
-        RSA.ImportCspBlob(Convert.FromBase64String(PublicKey));
-        var EncryptedPassword = RSA.Encrypt(Password, true);
+        var rsa = new System.Security.Cryptography.RSACryptoServiceProvider();
+        rsa.ImportCspBlob(Convert.FromBase64String(publicKey));
+        var encryptedPassword = rsa.Encrypt(password, true);
 
         //test
         //if (PublicKey == Functions.GetMyPublicKey())
@@ -156,103 +153,100 @@ namespace CryptogramLibrary
         //  var PW = Functions.GetMyRSA().Decrypt(EncryptedPassword, true);
         //}
 
-        byte LanPass = (byte)EncryptedPassword.Length;
-        byte[] Len = new byte[] { LanPass };
-        Result = Result.Concat(Len).Concat(EncryptedPassword).ToArray();
+        var lanPass = (byte)encryptedPassword.Length;
+        var len = new byte[] { lanPass };
+        result = result.Concat(len).Concat(encryptedPassword).ToArray();
       }
-      Result = Result.Concat(new byte[] { 0 }).ToArray();
-      return Result;
+      result = result.Concat(new byte[] { 0 }).ToArray();
+      return result;
     }
-    private static byte[] DecryptPassword(byte[] Data, out int EncryptedDataPosition)
+    private static byte[] DecryptPassword(byte[] data, out int encryptedDataPosition)
     {
       //START ==== Obtain all password encrypted ====
-      var EncryptedPasswords = new List<Byte[]>();
-      int P = 2;
-      int Len = Data[P];
+      var encryptedPasswords = new List<Byte[]>();
+      var p = 2;
+      int len = data[p];
       do
       {
-        P += 1;
-        byte[] EncryptedPassword = new byte[Len];
-        Buffer.BlockCopy(Data, P, EncryptedPassword, 0, Len);
-        EncryptedPasswords.Add(EncryptedPassword);
-        P += Len;
-        Len = Data[P];
-      } while (Len != 0);
+        p += 1;
+        var encryptedPassword = new byte[len];
+        Buffer.BlockCopy(data, p, encryptedPassword, 0, len);
+        encryptedPasswords.Add(encryptedPassword);
+        p += len;
+        len = data[p];
+      } while (len != 0);
       //END  ==== Obtain all password encrypted ====
-      EncryptedDataPosition = P + 1;
+      encryptedDataPosition = p + 1;
 
-      int MyId = _Participants.IndexOf(GetMyPublicKey());
-      if (MyId == -1)
+      var myId = _participants.IndexOf(GetMyPublicKey());
+      if (myId == -1)
       {
         //Im not in this chat
         return null;
       }
-      var EPassword = EncryptedPasswords[MyId];
-      var RSA = GetMyRSA();
+      var ePassword = encryptedPasswords[myId];
+      var rsa = GetMyRsa();
 
-      return RSA.Decrypt(EPassword, true);
+      return rsa.Decrypt(ePassword, true);
     }
 
-    private static void SendData(DataType Type, byte[] Data)
+    private static void SendData(DataType type, byte[] data)
     {
       new System.Threading.Thread(() =>
       {
         try
         {
-          const byte Version = 0;
-          byte[] BlockchainData = { Version, (byte)Type };
-          var Password = GeneratePassword();
-          var GlobalPassword = EncryptPasswordForParticipants(Password);
+          const byte version = 0;
+          byte[] blockchainData = { version, (byte)type };
+          var password = GeneratePassword();
+          var globalPassword = EncryptPasswordForParticipants(password);
           System.Security.Cryptography.HashAlgorithm hashType = new System.Security.Cryptography.SHA256Managed();
-          byte[] HashData = hashType.ComputeHash(Data);
-          var SignatureOfData = GetMyRSA().SignHash(HashData, System.Security.Cryptography.CryptoConfig.MapNameToOID("SHA256"));
-          var EncryptedData = Cryptography.Encrypt(Data.Concat(SignatureOfData).ToArray(), Password);
-          BlockchainData = BlockchainData.Concat(GlobalPassword).Concat(EncryptedData).ToArray();
-          Blockchain.RequestAnyNewBlocks();
-          if (BlockchainData.Length * 2 + 4096 <= Blockchain.MaxBlockLenght)
+          var hashData = hashType.ComputeHash(data);
+          var signatureOfData = GetMyRsa().SignHash(hashData, System.Security.Cryptography.CryptoConfig.MapNameToOID("SHA256"));
+          var encryptedData = Cryptography.Encrypt(data.Concat(signatureOfData).ToArray(), password);
+          blockchainData = blockchainData.Concat(globalPassword).Concat(encryptedData).ToArray();
+          _blockchain.RequestAnyNewBlocks();
+          if (blockchainData.Length * 2 + 4096 <= _blockchain.MaxBlockLenght)
           {
-            Blockchain.Block NewBlock = new Blockchain.Block(Blockchain, BlockchainData);
-            var BlockPosition = Blockchain.Length();
-            if (!NewBlock.IsValid()) System.Diagnostics.Debugger.Break();
-            Blockchain.SyncBlockToNetwork(NewBlock, BlockPosition);
-            ViewMessage(NewBlock.Timestamp, Type, Data, true);
+            var newBlock = new Blockchain.Block(_blockchain, blockchainData);
+            var blockPosition = _blockchain.Length();
+            if (!newBlock.IsValid()) System.Diagnostics.Debugger.Break();
+            _blockchain.SyncBlockToNetwork(newBlock, blockPosition);
+            ViewMessage(newBlock.Timestamp, type, data, true);
           }
           else
             Functions.Alert(Resources.Dictionary.ExceededBlockSizeLimit);
         }
-        catch (Exception Ex)
+        catch (Exception ex)
         {
-          Functions.Alert(Ex.Message);
+          Functions.Alert(ex.Message);
         }
-        Sending = 0;
+        _sending = 0;
       }).Start();
     }
 
-    private static int Sending = 0;
-    public static void SendText(string Text)
+    private static int _sending = 0;
+    public static void SendText(string text)
     {
-      Sending += 1;
-      if (Sending == 1)
-      {
-        if (Text != null)
-          Text = Text.Trim(" ".ToCharArray());
-        if (!string.IsNullOrEmpty(Text))
-          SendData(DataType.Text, Encoding.Unicode.GetBytes(Text));
-      }
+      _sending += 1;
+      if (_sending != 1) return;
+      text = text?.Trim(" ".ToCharArray());
+      if (!string.IsNullOrEmpty(text))
+        SendData(DataType.Text, Encoding.Unicode.GetBytes(text));
     }
 
-    public static void SendPicture(object Image)
+    public static void SendPicture(object image)
     {
-      Sending += 1;
-      if (Sending == 1)
+      _sending += 1;
+      if (_sending == 1)
       {
       }
     }
 
-    public static void SendAudio(object Audio)
+    public static void SendAudio(object audio)
     {
-      Sending += 1;
-      if (Sending == 1)
+      _sending += 1;
+      if (_sending == 1)
       {
       }
     }
@@ -261,11 +255,11 @@ namespace CryptogramLibrary
     /// Return a RSA of current user
     /// </summary>
     /// <returns></returns>
-    public static System.Security.Cryptography.RSACryptoServiceProvider GetMyRSA()
+    public static System.Security.Cryptography.RSACryptoServiceProvider GetMyRsa()
     {
-      var RSA = new System.Security.Cryptography.RSACryptoServiceProvider();
-      RSA.ImportCspBlob(Convert.FromBase64String(MyPrivateKey));
-      return RSA;
+      var rsa = new System.Security.Cryptography.RSACryptoServiceProvider();
+      rsa.ImportCspBlob(Convert.FromBase64String(MyPrivateKey));
+      return rsa;
     }
 
     /// <summary>
@@ -274,10 +268,10 @@ namespace CryptogramLibrary
     /// <returns></returns>
     public static string GetMyPublicKey()
     {
-      return Convert.ToBase64String(GetMyRSA().ExportCspBlob(false));
+      return Convert.ToBase64String(GetMyRsa().ExportCspBlob(false));
     }
 
-    private static string _MyPrivateKey;
+    private static string _myPrivateKey;
     /// <summary>
     /// Return the private key stored in the device,if not present, it generates one
     /// </summary>
@@ -286,30 +280,28 @@ namespace CryptogramLibrary
     {
       get
       {
-        if (string.IsNullOrEmpty(_MyPrivateKey))
-          _MyPrivateKey = (string)Storage.LoadObject(typeof(string), "MyPrivateKey");
-        if (string.IsNullOrEmpty(_MyPrivateKey))
+        if (string.IsNullOrEmpty(_myPrivateKey))
+          _myPrivateKey = (string)Storage.LoadObject(typeof(string), "MyPrivateKey");
+        if (string.IsNullOrEmpty(_myPrivateKey))
         {
           MyPrivateKey = Convert.ToBase64String(new System.Security.Cryptography.RSACryptoServiceProvider().ExportCspBlob(true)); //Save
         }
-        return _MyPrivateKey;
+        return _myPrivateKey;
       }
       set
       {
-        if (_MyPrivateKey != value)
+        if (_myPrivateKey == value) return;
+        try
         {
-          try
-          {
-            var RSA = new System.Security.Cryptography.RSACryptoServiceProvider();
-            RSA.ImportCspBlob(Convert.FromBase64String(value));
-            _MyPrivateKey = value;
-            Storage.SaveObject(_MyPrivateKey, "MyPrivateKey");
-          }
-          catch (Exception)
-          {
-            Functions.Alert(Resources.Dictionary.InvalidKey);
-            throw;
-          }
+          var rsa = new System.Security.Cryptography.RSACryptoServiceProvider();
+          rsa.ImportCspBlob(Convert.FromBase64String(value));
+          _myPrivateKey = value;
+          Storage.SaveObject(_myPrivateKey, "MyPrivateKey");
+        }
+        catch (Exception)
+        {
+          Functions.Alert(Resources.Dictionary.InvalidKey);
+          throw;
         }
 
       }
@@ -317,55 +309,48 @@ namespace CryptogramLibrary
 
     public class Contact : ICloneable
     {
-      private string FirstUpper(string Text)
+      private string FirstUpper(string text)
       {
-        string Value = "";
-        if (!string.IsNullOrEmpty(Text))
+        var value = "";
+        if (string.IsNullOrEmpty(text)) return value;
+        var last = false;
+        foreach (var c in text)
         {
-          bool Last = false;
-          foreach (char c in Text)
+          if (char.IsLetter(c))
           {
-            if (char.IsLetter(c))
-            {
-              if (!Last)
-                Value += char.ToUpper(c);
-              else
-                Value += c;
-              Last = true;
-            }
+            if (!last)
+              value += char.ToUpper(c);
             else
-            {
-              Last = false;
-              Value += c;
-            }
+              value += c;
+            last = true;
+          }
+          else
+          {
+            last = false;
+            value += c;
           }
         }
-        return Value;
+        return value;
       }
-      private string _Name;
+      private string _name;
       public string Name
       {
-        get { return _Name; }
-        set
-        {
-          _Name = FirstUpper(value);
-        }
+        get => _name;
+        set => _name = FirstUpper(value);
       }
-      private string _PublicKey;
+      private string _publicKey;
       public string PublicKey
       {
-        get { return _PublicKey; }
+        get => _publicKey;
         set
         {
-          _PublicKey = "";
-          if (value != null)
+          _publicKey = "";
+          if (value == null) return;
+          foreach (var c in value.ToCharArray())
           {
-            foreach (var c in value.ToCharArray())
-            {
-              //Clear Base64 string
-              if (char.IsLetterOrDigit(c) || @"+=/".Contains(c))
-                _PublicKey += c;
-            }
+            //Clear Base64 string
+            if (char.IsLetterOrDigit(c) || @"+=/".Contains(c))
+              _publicKey += c;
           }
         }
       }
@@ -376,74 +361,69 @@ namespace CryptogramLibrary
 
       public object Clone()
       {
-        return this.MemberwiseClone();
+        return MemberwiseClone();
       }
     }
 
-    private static readonly List<Contact> _Contacts = InitContacts();
+    private static readonly List<Contact> Contacts = InitContacts();
     private static List<Contact> InitContacts()
     {
-      List<Contact> List = (List<Contact>)Storage.LoadObject(typeof(List<Contact>), "Contacts");
-      if (List == null)
-        List = new List<Contact>();
+      var list = (List<Contact>)Storage.LoadObject(typeof(List<Contact>), "Contacts");
+      if (list == null)
+        list = new List<Contact>();
 #if DEBUG
-      if (List.Count == 0)
-        List.Add(new Contact() { Name = "Pippo", PublicKey = Convert.ToBase64String(new System.Security.Cryptography.RSACryptoServiceProvider().ExportCspBlob(false)) });
+      if (list.Count == 0)
+        list.Add(new Contact() { Name = "Pippo", PublicKey = Convert.ToBase64String(new System.Security.Cryptography.RSACryptoServiceProvider().ExportCspBlob(false)) });
 #endif
-      return List;
+      return list;
     }
 
     public static Contact[] GetContacts()
     {
-      lock (_Contacts)
-        return _Contacts.ToArray();
+      lock (Contacts)
+        return Contacts.ToArray();
     }
-    public static bool AddContact(Contact Contact)
+    public static bool AddContact(Contact contact)
     {
-      lock (_Contacts)
+      lock (Contacts)
       {
-        if (_Contacts.Contains(Contact))
-          _Contacts.Remove(Contact);
-        Contact Duplicate = _Contacts.Find(X => X.PublicKey == Contact.PublicKey);
-        if (Duplicate != null)
-          _Contacts.Remove(Duplicate);
-        _Contacts.Add(Contact);
-        var Sorted = _Contacts.OrderBy(o => o.Name).ToList();
-        _Contacts.Clear();
-        _Contacts.AddRange(Sorted);
+        if (Contacts.Contains(contact))
+          Contacts.Remove(contact);
+        var duplicate = Contacts.Find(x => x.PublicKey == contact.PublicKey);
+        if (duplicate != null)
+          Contacts.Remove(duplicate);
+        Contacts.Add(contact);
+        var sorted = Contacts.OrderBy(o => o.Name).ToList();
+        Contacts.Clear();
+        Contacts.AddRange(sorted);
       }
-      Storage.SaveObject(_Contacts, "Contacts");
-      if (!ValidateKey(Contact.PublicKey))
-      {
-        Functions.Alert(Resources.Dictionary.InvalidKey);
-        return false;
-      }
-      return true;
+      Storage.SaveObject(Contacts, "Contacts");
+      if (ValidateKey(contact.PublicKey)) return true;
+      Functions.Alert(Resources.Dictionary.InvalidKey);
+      return false;
     }
 
-    public static void RemoveContact(Contact Contact)
+    public static void RemoveContact(Contact contact)
     {
-      lock (_Contacts)
+      lock (Contacts)
       {
-        if (_Contacts.Contains(Contact))
-        {
-          _Contacts.Remove(Contact);
-          Storage.SaveObject(_Contacts, "Contacts");
-        }
+        if (!Contacts.Contains(contact)) return;
+        Contacts.Remove(contact);
+        Storage.SaveObject(Contacts, "Contacts");
       }
     }
-    public static void RemoveContact(String Key)
+    public static void RemoveContact(String key)
     {
-      Contact Contact = _Contacts.Find(X => X.PublicKey == Key);
-      if (Contact != null)
-        RemoveContact(Contact);
+      var contact = Contacts.Find(x => x.PublicKey == key);
+      if (contact != null)
+        RemoveContact(contact);
     }
-    private static bool ValidateKey(string Key)
+    private static bool ValidateKey(string key)
     {
       try
       {
-        var RSA = new System.Security.Cryptography.RSACryptoServiceProvider();
-        RSA.ImportCspBlob(Convert.FromBase64String(Key));
+        var rsa = new System.Security.Cryptography.RSACryptoServiceProvider();
+        rsa.ImportCspBlob(Convert.FromBase64String(key));
         return true;
       }
       catch (Exception)

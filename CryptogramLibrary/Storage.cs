@@ -6,112 +6,110 @@ namespace CryptogramLibrary
 {
   internal class Storage
   {
-    public static string SaveObject(object Obj, string Key)
+    public static string SaveObject(object obj, string key)
     {
-      Key = KeyToNameFile(Key);
-      string Extension = null;
-      Extension = ".xml";
+      key = KeyToNameFile(key);
+      string extension = null;
+      extension = ".xml";
 
-      string SubDir = Obj.GetType().FullName;
-      if (SubDir.Contains("Version="))
+      var subDir = obj.GetType().FullName;
+      if (subDir.Contains("Version="))
       {
-        SubDir = Obj.GetType().Namespace + "+" + Obj.GetType().Name;
+        subDir = obj.GetType().Namespace + "+" + obj.GetType().Name;
       }
 
-      if (Key.Length > 255)
+      if (key.Length > 255)
       {
-        throw new System.ArgumentException("File name too long", "");
+        throw new ArgumentException("File name too long", "");
       }
       else
       {
-        Serialize(Obj, SubDir + "." + Key + Extension);
+        Serialize(obj, subDir + "." + key + extension);
       }
 
-      return Key;
+      return key;
     }
 
-    public static object LoadObject(Type Type, string Key)
+    public static object LoadObject(Type type, string key)
     {
-      object Obj = null;
-      Key = KeyToNameFile(Key);
-      string Extension = null;
-      Extension = ".xml";
-      string SubDir = Type.FullName;
-      if (SubDir.Contains("Version="))
+      object obj = null;
+      key = KeyToNameFile(key);
+      string extension = null;
+      extension = ".xml";
+      var subDir = type.FullName;
+      if (subDir.Contains("Version="))
       {
-        SubDir = Type.Namespace + "+" + Type.Name;
+        subDir = type.Namespace + "+" + type.Name;
       }
       try
       {
-        Obj = Deserialize(SubDir + "." + Key + Extension, Type);
+        obj = Deserialize(subDir + "." + key + extension, type);
       }
       catch (Exception ex)
       {
+        System.Diagnostics.Debug.Print(ex.Message);
+        System.Diagnostics.Debugger.Break();
       }
-      return Obj;
+      return obj;
     }
 
-    public static void DeleteObject(Type Type, string Key)
+    public static void DeleteObject(Type type, string key)
     {
-      Key = KeyToNameFile(Key);
-      string Extension = null;
-      Extension = ".xml";
-      string SubDir = Type.FullName;
-      if (SubDir.Contains("Version="))
+      key = KeyToNameFile(key);
+      string extension = null;
+      extension = ".xml";
+      var subDir = type.FullName;
+      if (subDir.Contains("Version="))
       {
-        SubDir = Type.Namespace + "+" + Type.Name;
+        subDir = type.Namespace + "+" + type.Name;
       }
-      string NameFile = SubDir + "." + Key + Extension;
+      var nameFile = subDir + "." + key + extension;
 
     }
 
-    private static string KeyToNameFile(string Text, string HexMark = "%")
+    private static string KeyToNameFile(string text, string hexMark = "%")
     {
+      if (string.IsNullOrEmpty(text)) return null;
       string functionReturnValue = null;
-      if (!string.IsNullOrEmpty(Text))
+      foreach (var chr in text.ToCharArray())
       {
-        foreach (char Chr in Text.ToCharArray())
-        {
-          if ("*?/\\|<>'\"".IndexOf(Chr) != -1)
-            functionReturnValue += "-";
-          else
-            functionReturnValue += Chr;
-        }
+        if ("*?/\\|<>'\"".IndexOf(chr) != -1)
+          functionReturnValue += "-";
+        else
+          functionReturnValue += chr;
       }
       return functionReturnValue;
     }
 
-    public static void Serialize(object Obj, string NameFile)
+    public static void Serialize(object obj, string nameFile)
     {
-      string KeyLock = NameFile.ToLower();
-      Exception Er = null;
+      var keyLock = nameFile.ToLower();
       try
       {
-        int NTry = 0;
-        int NTryError = 0;
+        var nTry = 0;
+        var nTryError = 0;
         do
         {
 
-          NTry = NTryError;
-          var Stream = new System.IO.IsolatedStorage.IsolatedStorageFileStream(NameFile, System.IO.FileMode.Create, System.IO.FileAccess.Write);
+          nTry = nTryError;
+          var stream = new System.IO.IsolatedStorage.IsolatedStorageFileStream(nameFile, System.IO.FileMode.Create, System.IO.FileAccess.Write);
           try
           {
-            System.Xml.Serialization.XmlSerializer xml = new System.Xml.Serialization.XmlSerializer(Obj.GetType());
-            xml.Serialize(Stream, Obj);
+            var xml = new System.Xml.Serialization.XmlSerializer(obj.GetType());
+            xml.Serialize(stream, obj);
           }
           catch (Exception ex)
           {
-            NTryError += 1;
+            System.Diagnostics.Debug.Print(ex.Message);
+            System.Diagnostics.Debugger.Break();
+            nTryError += 1;
             System.Threading.Tasks.Task.Delay(500);
           }
           finally
           {
-            if (Stream != null)
-            {
-              Stream.Dispose();
-            }
+            stream?.Dispose();
           }
-        } while (!(NTry == NTryError || NTryError > (5000 / 500)));
+        } while (!(nTry == nTryError || nTryError > (5000 / 500)));
       }
       catch (Exception ex)
       {
@@ -120,49 +118,44 @@ namespace CryptogramLibrary
 
     }
 
-    public static object Deserialize(string NameFile, Type Type = null)
+    public static object Deserialize(string nameFile, Type type = null)
     {
-      object Obj = null;
-      if (System.IO.IsolatedStorage.IsolatedStorageFile.GetUserStoreForApplication().FileExists(NameFile)) ;
+      if (!System.IO.IsolatedStorage.IsolatedStorageFile.GetUserStoreForApplication().FileExists(nameFile)) return null;
+      object obj = null;
+      var keyLock = nameFile.ToLower();
+      var er = default(Exception);
+      try
       {
-        string KeyLock = NameFile.ToLower();
-        Exception Er = default(Exception);
-        try
+        var nTry = 0;
+        var nTryError = 0;
+        do
         {
-          int NTry = 0;
-          int NTryError = 0;
-          do
+          nTry = nTryError;
+          System.IO.Stream stream = new System.IO.IsolatedStorage.IsolatedStorageFileStream(nameFile, System.IO.FileMode.Open, System.IO.FileAccess.Read, System.IO.FileShare.Inheritable);
+          try
           {
-            NTry = NTryError;
-            System.IO.Stream Stream = new System.IO.IsolatedStorage.IsolatedStorageFileStream(NameFile, System.IO.FileMode.Open, System.IO.FileAccess.Read, System.IO.FileShare.Inheritable);
-            try
-            {
-              System.Xml.Serialization.XmlSerializer XML = new System.Xml.Serialization.XmlSerializer(Type);
+            var xml = new System.Xml.Serialization.XmlSerializer(type);
 
-              Obj = XML.Deserialize(Stream);
-              Er = null;
-            }
-            catch (Exception ex)
-            {
-              Er = ex;
-              NTryError += 1;
-              System.Threading.Tasks.Task.Delay(500);
-            }
-            finally
-            {
-              if (Stream != null)
-              {
-                Stream.Dispose();
-              }
-            }
-          } while (!(NTry == NTryError || NTryError > (5000 / 500)));
-        }
-        catch (Exception ex)
-        {
-          throw ex;
-        }
+            obj = xml.Deserialize(stream);
+            er = null;
+          }
+          catch (Exception ex)
+          {
+            er = ex;
+            nTryError += 1;
+            System.Threading.Tasks.Task.Delay(500);
+          }
+          finally
+          {
+            stream?.Dispose();
+          }
+        } while (!(nTry == nTryError || nTryError > (5000 / 500)));
       }
-      return Obj;
+      catch (Exception ex)
+      {
+        throw ex;
+      }
+      return obj;
     }
   }
 
