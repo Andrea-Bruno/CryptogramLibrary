@@ -1,8 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-
-namespace CryptogramLibrary
+﻿namespace CryptogramLibrary
 {
   internal static class Cryptography
   {

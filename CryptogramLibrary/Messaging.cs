@@ -14,10 +14,9 @@ namespace CryptogramLibrary
       Audio,
     }
 
-    private const int MaxPartecipants = 10;
+    private const int MaxParticipants = 10;
     private static string _blockChainName;
     private static Blockchain _blockchain;
-
 
     /// <summary>
     /// This function starts the messaging chat room
@@ -37,30 +36,30 @@ namespace CryptogramLibrary
     }
 
     private static List<string> _participants; //List in base64 format
-    private static int _runningCreateChatRool = 0;
-    public static void CreateChatRoom(List<string> partecipants)
+    private static int _runningCreateChatRoom;
+    public static void CreateChatRoom(List<string> participants)
     {
-      _runningCreateChatRool += 1;
-      if (_runningCreateChatRool == 1)
+      _runningCreateChatRoom += 1;
+      if (_runningCreateChatRoom == 1)
       {
         new System.Threading.Thread(() =>
         {
-          if (partecipants.Count > MaxPartecipants)
+          if (participants.Count > MaxParticipants)
           {
             Functions.Alert(Resources.Dictionary.TooManyParticipants);
-            _runningCreateChatRool = 0;
+            _runningCreateChatRoom = 0;
             return;
           }
-          foreach (var memberKey in partecipants)
+          foreach (var memberKey in participants)
           {
             if (ValidateKey(memberKey)) continue;
             Functions.Alert(Resources.Dictionary.InvalidKey);
-            _runningCreateChatRool = 0;
+            _runningCreateChatRoom = 0;
             return;
           }
           //Messaging.Container = Container;
-          partecipants.Sort();
-          _participants = partecipants;
+          participants.Sort();
+          _participants = participants;
           var ptsStr = string.Join(" ", _participants.ToArray());
           System.Security.Cryptography.HashAlgorithm hashType = new System.Security.Cryptography.SHA256Managed();
           var hashBytes = hashType.ComputeHash(Encoding.GetEncoding("utf-16LE").GetBytes(ptsStr));
@@ -71,16 +70,15 @@ namespace CryptogramLibrary
           {
             _blockchain.RequestAnyNewBlocks();
             ReadBlockchain(blockchainLen);
-            _runningCreateChatRool = 0;
+            _runningCreateChatRoom = 0;
           }).Start();
         }).Start();
       }
-      return;
     }
 
-    private static long ReadBlockchain(long fromPosizion = 0)
+    private static long ReadBlockchain(long fromPosition = 0)
     {
-      _blockchain.ReadBlocks(fromPosizion, ExecuteBlock);
+      _blockchain.ReadBlocks(fromPosition, ExecuteBlock);
       return _blockchain.Length();
     }
     private static void ExecuteBlock(Blockchain.Block block)
@@ -104,15 +102,14 @@ namespace CryptogramLibrary
       Buffer.BlockCopy(dataElement, dataLen, signatureOfData, 0, 128);
       // Find the author
       string author = null;
-      foreach (var partecipant in _participants)
+      foreach (var participant in _participants)
       {
-        var rsAalg = new System.Security.Cryptography.RSACryptoServiceProvider();
-        rsAalg.ImportCspBlob(Convert.FromBase64String(partecipant));
-        if (rsAalg.VerifyHash(hashData, System.Security.Cryptography.CryptoConfig.MapNameToOID("SHA256"), signatureOfData))
-        {
-          author = partecipant;
-          break;
-        }
+        var rsa = new System.Security.Cryptography.RSACryptoServiceProvider();
+        rsa.ImportCspBlob(Convert.FromBase64String(participant));
+        if (!rsa.VerifyHash(hashData, System.Security.Cryptography.CryptoConfig.MapNameToOID("SHA256"),
+          signatureOfData)) continue;
+        author = participant;
+        break;
       }
       //var SignatureOfData = GetMyRSA().SignHash(HashData, System.Security.Cryptography.CryptoConfig.MapNameToOID("SHA256"));
       //var Signatures = Block.GetAllBodySignature();
@@ -134,7 +131,7 @@ namespace CryptogramLibrary
     }
 
     //private static byte[] pw;
-    private static byte[] EncryptPasswordForParticipants(byte[] password)
+    private static IEnumerable<byte> EncryptPasswordForParticipants(byte[] password)
     {
       //========================RESULT================================
       //[len ePass1] + [ePass1] + [len ePass2] + [ePass2] + ... + [0] 
@@ -154,7 +151,7 @@ namespace CryptogramLibrary
         //}
 
         var lanPass = (byte)encryptedPassword.Length;
-        var len = new byte[] { lanPass };
+        var len = new[] { lanPass };
         result = result.Concat(len).Concat(encryptedPassword).ToArray();
       }
       result = result.Concat(new byte[] { 0 }).ToArray();
@@ -163,7 +160,7 @@ namespace CryptogramLibrary
     private static byte[] DecryptPassword(byte[] data, out int encryptedDataPosition)
     {
       //START ==== Obtain all password encrypted ====
-      var encryptedPasswords = new List<Byte[]>();
+      var encryptedPasswords = new List<byte[]>();
       var p = 2;
       int len = data[p];
       do
@@ -196,6 +193,11 @@ namespace CryptogramLibrary
       {
         try
         {
+          // Specifications of the cryptogram data format (Version 0):
+          // First byte (version): Indicates the version of the technical specification, if this parameter changes everything in the data package it can follow other specifications
+          // Second byte: Indicates the type of data that contains this block: Text, Image, Audio (in the future also new implementations).
+          // Global Password: Variable length data that contains the password for each participant in the chat room. The length of this data depends on the number of participants. For this purpose, see the EncryptPasswordForParticipants function. The protocol includes more than 2 participants in a chat room.
+          // Encrypted data: This is the real data (message, photo, audio, etc.), encrypted according to an algorithm contained in the Cryptography.Encrypt class. The encryption is made with an xor between the original data and a random data generated with a repetitive hash that starting from the password.
           const byte version = 0;
           byte[] blockchainData = { version, (byte)type };
           var password = GeneratePassword();
@@ -206,7 +208,7 @@ namespace CryptogramLibrary
           var encryptedData = Cryptography.Encrypt(data.Concat(signatureOfData).ToArray(), password);
           blockchainData = blockchainData.Concat(globalPassword).Concat(encryptedData).ToArray();
           _blockchain.RequestAnyNewBlocks();
-          if (blockchainData.Length * 2 + 4096 <= _blockchain.MaxBlockLenght)
+          if (blockchainData.Length * 2 + 4096 <= _blockchain.MaxBlockLength)
           {
             var newBlock = new Blockchain.Block(_blockchain, blockchainData);
             var blockPosition = _blockchain.Length();
@@ -225,7 +227,7 @@ namespace CryptogramLibrary
       }).Start();
     }
 
-    private static int _sending = 0;
+    private static int _sending;
     public static void SendText(string text)
     {
       _sending += 1;
@@ -309,7 +311,7 @@ namespace CryptogramLibrary
 
     public class Contact : ICloneable
     {
-      private string FirstUpper(string text)
+      private static string FirstUpper(string text)
       {
         var value = "";
         if (string.IsNullOrEmpty(text)) return value;
@@ -368,9 +370,7 @@ namespace CryptogramLibrary
     private static readonly List<Contact> Contacts = InitContacts();
     private static List<Contact> InitContacts()
     {
-      var list = (List<Contact>)Storage.LoadObject(typeof(List<Contact>), "Contacts");
-      if (list == null)
-        list = new List<Contact>();
+      var list = (List<Contact>)Storage.LoadObject(typeof(List<Contact>), "Contacts") ?? new List<Contact>();
 #if DEBUG
       if (list.Count == 0)
         list.Add(new Contact() { Name = "Pippo", PublicKey = Convert.ToBase64String(new System.Security.Cryptography.RSACryptoServiceProvider().ExportCspBlob(false)) });
@@ -412,7 +412,7 @@ namespace CryptogramLibrary
         Storage.SaveObject(Contacts, "Contacts");
       }
     }
-    public static void RemoveContact(String key)
+    public static void RemoveContact(string key)
     {
       var contact = Contacts.Find(x => x.PublicKey == key);
       if (contact != null)

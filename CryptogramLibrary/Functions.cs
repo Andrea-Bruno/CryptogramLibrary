@@ -1,7 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-
+﻿using System.Collections.Generic;
 namespace CryptogramLibrary
 {
   public static class Functions
@@ -10,7 +7,7 @@ namespace CryptogramLibrary
     public static AlertMessage Alert = (text) => { };
 
     public delegate bool ShareTextMessage(string text);
-    public static ShareTextMessage ShareText = (text) => { return true; };
+    public static ShareTextMessage ShareText = (text) => true;
 
     /// <summary>
     /// This method initializes the network.
